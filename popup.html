@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Garmin Shot Analyzer</h1>
+    
+    <div id="login-warning" class="warning" style="display: none;">
+      Please login to connect.garmin.com first
+    </div>
+    
+    <div class="token-section">
+      <label for="bearer-token">Bearer Token:</label>
+      <textarea id="bearer-token" placeholder="Paste your bearer token here..." rows="3"></textarea>
+      <button id="save-token-btn" class="btn-secondary">Save Token</button>
+    </div>
+    
+    <button id="scan-btn" class="btn-primary">
+      Scan for Bad Shots
+    </button>
+    
+    <div id="progress" class="progress" style="display: none;">
+      <div class="progress-text">Scanning...</div>
+      <div class="progress-bar">
+        <div class="progress-fill"></div>
+      </div>
+    </div>
+    
+    <div id="results" class="results" style="display: none;">
+      <h2>Suspicious Shots Found:</h2>
+      <div id="results-count"></div>
+      <div id="results-list"></div>
+    </div>
+    
+    <div id="no-results" class="no-results" style="display: none;">
+      <p>No suspicious shots found!</p>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
