@@ -82,7 +82,6 @@ async function fetchClubs() {
     throw new Error('Bearer token not found. Please enter a valid token in the extension popup.');
   }
   
-  console.log('Fetching clubs with token:', token.substring(0, 20) + '...');
   
   const response = await fetch(`${GARMIN_API_BASE}/gcs-golfcommunity/api/v2/club/player?per-page=1000&include-stats=true&maxClubTypeId=42`, {
     method: 'GET',
@@ -97,7 +96,6 @@ async function fetchClubs() {
     }
   });
   
-  console.log('Club response status:', response.status);
   
   if (!response.ok) {
     const text = await response.text();
@@ -106,7 +104,6 @@ async function fetchClubs() {
   }
   
   const data = await response.json();
-  console.log('Clubs data:', data);
   return Array.isArray(data) ? data : [];
 }
 
@@ -166,9 +163,15 @@ async function fetchShots(scorecardId) {
 }
 
 // Check if a shot is suspicious based on clubTypeId and distance
-function isShotSuspicious(clubTypeId, distanceMeters) {
+async function isShotSuspicious(clubId, clubTypeId, distanceMeters, customRanges) {
   if (distanceMeters == null) return false;
   
+  // Check if there's a custom range for this specific club
+  if (customRanges && customRanges[clubId]) {
+    return distanceMeters > customRanges[clubId].max;
+  }
+  
+  // Fall back to default limits
   let limits = SHOT_LIMITS_BY_ID[clubTypeId] || SHOT_LIMITS_BY_ID.default;
   
   // Special case for putter (clubTypeId 23) - only check max
@@ -193,6 +196,13 @@ async function scanForBadShots(sendProgress) {
   const suspiciousShots = [];
   
   try {
+    // Load custom club ranges from storage
+    const customRanges = await new Promise((resolve) => {
+      chrome.storage.local.get(['customClubRanges'], function(result) {
+        resolve(result.customClubRanges || {});
+      });
+    });
+    
     // Fetch club types first to build dynamic mapping
     sendProgress({ status: 'Fetching club types...', percent: 2 });
     const clubTypes = await fetchClubTypes();
@@ -226,10 +236,15 @@ async function scanForBadShots(sendProgress) {
     for (let i = 0; i < totalScorecards; i++) {
       const scorecard = scorecards[i];
       const progress = 10 + (i / totalScorecards) * 85;
-      sendProgress({ 
+      const shouldContinue = sendProgress({ 
         status: `Processing scorecard ${i + 1}/${totalScorecards}...`, 
         percent: progress 
       });
+      
+      // Check if scan was cancelled
+      if (shouldContinue === false) {
+        return suspiciousShots;
+      }
       
       // Fetch shots for this scorecard
       const shotData = await fetchShots(scorecard.id);
@@ -246,7 +261,7 @@ async function scanForBadShots(sendProgress) {
           const clubTypeId = clubToTypeMap[shot.clubId];
           const distance = shot.meters;
           
-          if (clubTypeId && isShotSuspicious(clubTypeId, distance)) {
+          if (clubTypeId && await isShotSuspicious(shot.clubId, clubTypeId, distance, customRanges)) {
             suspiciousShots.push({
               scorecardId: scorecard.id,
               scorecardDate: scorecard.startDate,
@@ -274,19 +289,76 @@ async function scanForBadShots(sendProgress) {
   }
 }
 
+// Track current scan to allow cancellation
+let currentScanId = null;
+let cancelCurrentScan = false;
+
 // Listen for messages from the extension
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'scanShots') {
+    // Set new scan ID and reset cancel flag
+    currentScanId = request.scanId;
+    cancelCurrentScan = false;
+    
     scanForBadShots((progress) => {
-      // Send progress updates back
-      chrome.runtime.sendMessage({ action: 'scanProgress', data: progress });
+      // Check if scan was cancelled
+      if (cancelCurrentScan || currentScanId !== request.scanId) {
+        return false; // Stop scanning
+      }
+      // Send progress updates back with scan ID
+      chrome.runtime.sendMessage({ 
+        action: 'scanProgress', 
+        data: progress,
+        scanId: request.scanId 
+      });
+      return true; // Continue scanning
     }).then(results => {
-      sendResponse({ success: true, data: results });
+      // Only send results if not cancelled
+      if (!cancelCurrentScan && currentScanId === request.scanId) {
+        sendResponse({ success: true, data: results });
+      }
     }).catch(error => {
-      sendResponse({ success: false, error: error.message });
+      if (!cancelCurrentScan && currentScanId === request.scanId) {
+        sendResponse({ success: false, error: error.message });
+      }
     });
     
     // Return true to indicate async response
     return true;
+  }
+  
+  if (request.action === 'cancelScan') {
+    cancelCurrentScan = true;
+    currentScanId = null;
+    sendResponse({ success: true });
+  }
+  
+  if (request.action === 'fetchUserClubs') {
+    // Fetch both club types and user's clubs
+    Promise.all([fetchClubTypes(), fetchClubs()])
+      .then(([clubTypes, userClubs]) => {
+        // Create a map of club type ID to name
+        const clubTypeMap = {};
+        clubTypes.forEach(clubType => {
+          clubTypeMap[clubType.value] = clubType.name;
+        });
+        
+        // Enhance user clubs with type names
+        const enhancedClubs = userClubs.map(club => ({
+          id: club.id,
+          clubTypeId: club.clubTypeId,
+          clubName: clubTypeMap[club.clubTypeId] || `Club Type ${club.clubTypeId}`,
+          averageDistance: club.clubStats?.averageDistance || 0,
+          maxDistance: club.clubStats?.maxLifetimeDistance || 0,
+          shotsCount: club.clubStats?.shotsCount || 0
+        }));
+        
+        sendResponse({ success: true, data: enhancedClubs });
+      })
+      .catch(error => {
+        sendResponse({ success: false, error: error.message });
+      });
+    
+    return true; // Will respond asynchronously
   }
 });

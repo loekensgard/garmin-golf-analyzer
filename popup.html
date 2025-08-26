@@ -15,7 +15,21 @@
     <div class="token-section">
       <label for="bearer-token">Bearer Token:</label>
       <textarea id="bearer-token" placeholder="Paste your bearer token here..." rows="3"></textarea>
-      <button id="save-token-btn" class="btn-secondary">Save Token</button>
+      
+      <label for="user-id" style="margin-top: 10px;">User ID:</label>
+      <input type="text" id="user-id" placeholder="Enter your Garmin user ID..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; box-sizing: border-box;">
+      
+      <button id="save-token-btn" class="btn-secondary">Save Settings</button>
+    </div>
+    
+    <button id="fetch-clubs-btn" class="btn-secondary">
+      Fetch My Clubs
+    </button>
+    
+    <div id="clubs-section" class="clubs-section" style="display: none;">
+      <h2>Club Distance Settings</h2>
+      <div id="clubs-list" class="clubs-list"></div>
+      <button id="save-clubs-btn" class="btn-secondary">Save Club Settings</button>
     </div>
     
     <button id="scan-btn" class="btn-primary">
