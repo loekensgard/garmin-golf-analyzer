@@ -206,6 +206,17 @@ h2 {
   text-decoration: underline;
 }
 
+.shot-link.disabled {
+  color: #999;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.shot-link.disabled:hover {
+  color: #999;
+  text-decoration: none;
+}
+
 .distance {
   min-width: 60px;
   text-align: right;

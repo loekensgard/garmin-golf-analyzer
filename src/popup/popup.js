@@ -122,6 +122,17 @@ document.addEventListener('DOMContentLoaded', function() {
       
       // Build HTML
       let html = '';
+      
+      // Check if user has configured their User ID
+      const hasValidUserId = window.savedUserId && window.savedUserId !== '12345678-abcd-1234-5678-123456789abc';
+      if (!hasValidUserId) {
+        html += `
+          <div class="warning" style="margin-bottom: 15px; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; color: #856404;">
+            ⚠️ <strong>User ID not configured:</strong> Shot links will not work. Please configure your User ID in the settings above to enable direct links to Garmin Connect.
+          </div>
+        `;
+      }
+      
       for (const [scorecardId, data] of Object.entries(groupedShots)) {
         html += `
           <div class="scorecard-group">
@@ -134,17 +145,21 @@ document.addEventListener('DOMContentLoaded', function() {
         
         data.shots.forEach(shot => {
           const distanceDisplay = shot.distance != null ? `${Math.round(shot.distance)}m` : 'N/A';
-          // Get saved user ID from storage, or use default
-          const userId = window.savedUserId || '12345678-abcd-1234-5678-123456789abc';
-          const shotUrl = `https://connect.garmin.com/modern/golf-shots/${userId}/scorecard/${shot.scorecardId}/hole/${shot.holeNumber}`;
+          // Check if user has provided their own user ID
+          const userId = window.savedUserId;
+          const hasValidUserId = userId && userId !== '12345678-abcd-1234-5678-123456789abc';
+          const shotUrl = hasValidUserId ? 
+            `https://connect.garmin.com/modern/golf-shots/${userId}/scorecard/${shot.scorecardId}/hole/${shot.holeNumber}` :
+            '#';
           
           html += `
             <div class="shot-item">
               <span class="hole">Hole ${shot.holeNumber}</span>
               <span class="club">
-                <a href="${shotUrl}" target="_blank" class="shot-link" title="Open shot details in new tab">
-                  ${shot.clubName}
-                </a>
+                ${hasValidUserId ? 
+                  `<a href="${shotUrl}" target="_blank" class="shot-link" title="Open shot details in new tab">${shot.clubName}</a>` :
+                  `<span class="shot-link disabled" title="Configure your User ID to enable links">${shot.clubName}</span>`
+                }
               </span>
               <span class="distance ${shot.distance > 200 ? 'extreme' : ''}">${distanceDisplay}</span>
             </div>
