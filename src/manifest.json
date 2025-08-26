@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Garmin Shot Analyzer",
-  "version": "1.0.3",
+  "version": "1.0.1",
   "description": "Find miscalculated golf shots in Garmin Connect",
   "permissions": [
     "storage",
@@ -15,7 +15,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "popup/popup.html",
     "default_title": "Garmin Shot Analyzer"
   }
 }

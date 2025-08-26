@@ -14,7 +14,7 @@ Garmin golf watches sometimes record incorrect shot distances due to:
 
 These errors affect your club statistics, and if using one of the Approach watches, the virtual caddy will use these statistics to suggest clubs. This extension helps you quickly find and review these problematic shots so you can correct them in Garmin Connect.
 
-<img src="assets/image.png" alt="Example of erroneous shot - Gap Wedge recorded at 594 yards" width="400">
+<img src="assets/image.png" alt="Example of erroneous shot - Gap Wedge recorded at 594 yards" width="200" height="400">
 
 *Example: A Gap Wedge shot incorrectly recorded at 594 yards - exactly the kind of error this extension helps you find and fix.*
 
@@ -39,7 +39,7 @@ These errors affect your club statistics, and if using one of the Approach watch
 
 3. Enable "Developer mode" in the top right corner
 
-4. Click "Load unpacked" and select the `garmin-club-fix` folder
+4. Click "Load unpacked" and select the `garmin-club-fix/src` folder
 
 5. The extension icon will appear in your Chrome toolbar
 
