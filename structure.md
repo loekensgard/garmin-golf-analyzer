@@ -1,109 +1,146 @@
-1. We need to get all the clubtypes to build our clubmatcher (this is where we find the correct clubs and can assign the hardcoded lenghts). 
-2. This is done from the club/types endpoint: https://connect.garmin.com/gcs-golfcommunity/api/v2/club/types?maxClubTypeId=42
-3. The data from this endpoint looks like this: 
+# Garmin Golf Shot Analyzer - Technical Documentation
+
+## Overview
+This Chrome extension analyzes golf shots from Garmin Connect to identify miscalculated or erroneous shot distances that can corrupt your club statistics. It works by fetching your golf data directly from Garmin's API and comparing each shot against realistic distance ranges for each club type.
+
+## How It Works
+
+### Step 1: Fetch Club Types
+First, we retrieve all available club types from Garmin to understand the club mapping.
+
+**Endpoint:** `https://connect.garmin.com/gcs-golfcommunity/api/v2/club/types?maxClubTypeId=42`
+
+**Response Example:**
+```json
 [
     {
-        "value": 1,
-        "name": "Driver",
-        "shaftLength": 45.5,
-        "loftAngle": 10.5,
-        "lieAngle": 58.5,
-        "displayRange": "8°-12°",
-        "valid": true
+        "value": 1,        // Club type ID (used for mapping)
+        "name": "Driver",  // Display name
+        // ...other properties (loft, lie, etc.)
     },
     {
         "value": 2,
         "name": "3 Wood",
-        "shaftLength": 43,
-        "loftAngle": 15,
-        "lieAngle": 56.5,
-        "displayRange": "13°-17°",
-        "valid": true
+        // ...other properties
     }
 ]
-4. We need to get the users clubs, this is done from this endpoint: https://connect.garmin.com/gcs-golfcommunity/api/v2/club/player?per-page=1000&include-stats=true&maxClubTypeId=42
-5. The response from this request looks like this, where the id is the important factor. 
+```
+
+### Step 2: Fetch User's Clubs
+We get the user's actual golf clubs to map club IDs to club types and names.
+
+**Endpoint:** `https://connect.garmin.com/gcs-golfcommunity/api/v2/club/player?per-page=1000&include-stats=true&maxClubTypeId=42`
+
+**Response Example:**
+```json
 [
     {
-        "id": 727631679,
-        "clubTypeId": 7,
-        "shaftLength": 45.5,
-        "flexTypeId": "STIFF",
-        "averageDistance": 0,
-        "adviceDistance": 0,
-        "retired": false,
-        "deleted": false,
-        "lastModifiedTime": "2025-08-24T19:59:00.000Z",
+        "id": 727631679,       // Unique club ID (used in shot data)
+        "clubTypeId": 7,       // Maps to club type
         "clubStats": {
-            "id": 727631679,
-            "averageDistance": 186.1,
-            "maximumRecentDistance": 223.88,
-            "minimumRecentDistance": 75.93,
-            "maxLifetimeDistance": 334.43,
-            "shotsCount": 271,
-            "percentFairwayHit": 58.62,
-            "percentFairwayLeft": 13.79,
-            "percentFairwayRight": 27.59,
-            "percentGreenHit": 8.33,
-            "percentGreenMissLeft": 8.33,
-            "percentGreenMissLong": 0,
-            "percentGreenMissRight": 8.33,
-            "percentGreenMissShort": 75,
-            "lastModifiedTime": "2025-08-25T18:29:39.000Z"
+            "averageDistance": 186.1,     // User's actual average
+            "maxLifetimeDistance": 334.43 // Lifetime max (often erroneous)
+            // ...other stats (fairway %, green %, etc.)
         }
+        // ...other properties (shaft, flex, etc.)
     }
 ]
-6. Then we need to create a hardcoded range of the users clubs with id, name, and most important the hardcoded range of the club. (the hardcoded range will be used to find miscalculated shots from that club.)
-7. Then we need to find all scorecards of the user. This is done to find the scorecard id. This is represented from the scorecardSummaries and id.This is done from this endpoint: https://connect.garmin.com/gcs-golfcommunity/api/v2/scorecard/summary?user-locale=en&per-page=10000. 
-8. When we have exracted all the id's from the scorecardSummaries we can start to itterate all the scorecards after miscalculated shots.
-9. Each scorecard can be retrieved from this endpoint https://connect.garmin.com/gcs-golfcommunity/api/v2/shot/scorecard/{scorecardId}/hole?image-size=IMG_730X730. 
-10. The data from the scorecard endpoint looks like this: 
+```
+
+### Step 3: Define Distance Ranges
+We use either hardcoded defaults or user-customized maximum distances for each club type.
+
+**Default Ranges (meters):**
+```javascript
+{
+    1: { max: 350 },   // Driver
+    2: { max: 280 },   // 3 Wood
+    19: { max: 150 },  // Pitching Wedge
+    20: { max: 140 },  // Approach Wedge
+    21: { max: 130 },  // Sand Wedge
+    22: { max: 120 },  // Lob Wedge
+    23: { max: 20 },   // Putter 
+    // ... etc
+}
+```
+
+**Why These Matter:**
+- **Putter at 20m max**: Catches common GPS errors where putts show as 60+ meters
+- **Wedges at 120-150m**: Identifies chip shots marked as full swings
+- **Driver at 350m**: Reasonable max even for long hitters
+
+### Step 4: Fetch All Scorecards
+We retrieve all the user's scorecards to get their scorecard IDs.
+
+**Endpoint:** `https://connect.garmin.com/gcs-golfcommunity/api/v2/scorecard/summary?user-locale=en&per-page=10000`
+
+**What We Extract:**
+- `scorecardSummaries[].id` - The scorecard ID needed to fetch shot details
+- `scorecardSummaries[].startDate` - When the round was played
+- `scorecardSummaries[].courseName` - Which course was played
+
+### Step 5: Analyze Each Scorecard's Shots
+For each scorecard, we fetch detailed shot data and check for suspicious distances.
+
+**Endpoint:** `https://connect.garmin.com/gcs-golfcommunity/api/v2/shot/scorecard/{scorecardId}/hole?image-size=IMG_730X730`
+
+**Response Structure:**
+```json
 {
   "holeShots": [
     {
       "holeNumber": 1,
-      "holeImageUrl": "https://birdseye.garmin.com/birdseye/golf/raster3d/3000/gd27000/gid027051/hole01/gid027051_hole01_0_260260.jpg?garmindlm=1756153185_9c4f631ce4b69a2e93f5bd6f77beb612",
-      "pinPosition": {
-        "lat": 714725269,
-        "lon": 126275677,
-        "x": 381,
-        "y": 152
-      },
       "shots": [
         {
           "id": 7887548426,
-          "scorecardId": 288271572,
-          "playerProfileId": 115279887,
-          "shotTime": 1723277139000,
-          "shotOrder": 1,
-          "shotTimeZoneOffset": 7200000,
-          "clubId": 727631027,
+          "clubId": 727631027,    // Maps to user's club
           "holeNumber": 1,
-          "autoShotType": "USED",
-          "startLoc": {
-            "lat": 714709648,
-            "lon": 126268575,
-            "x": 386,
-            "y": 607,
-            "lie": "TeeBox",
-            "lieSource": "CARTOGRAPHY"
-          },
-          "endLoc": {
-            "lat": 714722659,
-            "lon": 126276010,
-            "x": 403,
-            "y": 223,
-            "lie": "Rough",
-            "lieSource": "CARTOGRAPHY"
-          },
-          "meters": 126.287,
-          "shotSource": "DEVICE_AUTO",
-          "shotType": "TEE"
-        },
+          "meters": 126.287,      // THE KEY VALUE WE CHECK!
+          "shotOrder": 1
+          // ...other properties (locations, times, etc.)
+        }
       ]
+      // ...other properties (pin position, hole image, etc.)
     }
   ]
 }
-11. in this body we will look through all the holeShots and shots to match against our clubId with our hardcoded range and check if the meters property is outside our range. If it is we will return the scorecardId to the user. 
+```
 
-Ask me clarifying questions if needed. 
+### Step 6: Detection Logic
+For each shot, we:
+1. Get the `clubId` from the shot data
+2. Map it to the club type using our user's clubs data
+3. Check if `meters` exceeds the maximum for that club type
+4. If suspicious, add to results with all relevant info
+
+**Detection Example:**
+```javascript
+// Shot with clubId: 727631023 (Putter, clubTypeId: 23)
+// Distance: 65.5 meters
+// Max allowed for putter: 20 meters
+// Result: SUSPICIOUS! Add to results
+```
+
+### Step 7: Display Results
+We group suspicious shots by scorecard and display them with:
+- Course name and date
+- Hole number
+- Club used
+- Recorded distance
+- Direct link to view/edit in Garmin Connect 
+
+## Authentication
+
+The extension requires a Bearer token from an active Garmin Connect session:
+
+**Required Headers:**
+```javascript
+{
+  'Accept': 'application/json, text/plain, */*',
+  'Authorization': `Bearer ${token}`,  // User must provide this
+  'NK': 'NT',
+  'X-App-Ver': '5.16.0.31',
+  'X-Lang': 'en-US',
+  'di-backend': 'golf.garmin.com'
+}
+```

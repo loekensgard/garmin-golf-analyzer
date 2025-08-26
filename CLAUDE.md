@@ -9,19 +9,46 @@ A Chrome extension that analyzes golf shots in Garmin Connect to identify miscal
 ## Architecture
 - **Chrome Extension** with manifest v3
 - **Content Script** (`content.js`) - Runs on connect.garmin.com pages, makes API calls
-- **Background Script** (`background.js`) - Relays messages between popup and content script
-- **Popup** (`popup.js` + `popup.html`) - User interface for triggering scans
+- **Background Script** (`background.js`) - Relays messages between popup and content script, manages scan state
+- **Popup** (`popup.js` + `popup.html`) - User interface for triggering scans and configuring settings
 
 ## Current Status
-✅ **Working**:
-- Extension loads correctly
-- Bearer token authentication working
-- Golf clubs API call successful (`/gcs-golfcommunity/api/v2/club/player`)
-- Club mapping and suspicious shot detection logic implemented
+✅ **Fully Working**:
+- Extension loads and functions correctly
+- Bearer token authentication with user input
+- User ID configuration for shot links
+- Golf clubs API integration with full club mapping
+- Scorecard scanning and shot analysis
+- Custom club distance range configuration
+- Background scan state management (survives popup close/reopen)
+- Results display with direct links to Garmin Connect
+- Token expiration handling with auto-clear
+- Club customization UI with personal distance settings
 
-❌ **Issues**:
-- Scorecards API not returning `scorecardId` field needed for fetching shot details
-- Need to investigate correct scorecard data structure
+## Features Implemented
+
+### 🔍 Core Scanning
+- Scans all user scorecards for suspicious shots
+- Progress tracking with real-time updates
+- Cancellation support for multiple scan prevention
+- Background processing (popup can be closed during scan)
+
+### ⚙️ Configuration Options  
+- **Bearer Token**: User-provided authentication token
+- **User ID**: Configurable for correct shot detail links
+- **Custom Club Ranges**: Personal maximum distances for each club
+- **Auto-clear expired tokens**: Removes invalid tokens on 401/403 errors
+
+### 🎯 Smart Detection
+- Uses default hardcoded limits or user-customized ranges
+- Focuses on most problematic shots (especially putter GPS errors)
+- Club-specific thresholds based on realistic distances
+
+### 📊 Results Display
+- Groups suspicious shots by scorecard/course
+- Shows hole number, club used, and recorded distance
+- Direct links to edit shots in Garmin Connect (opens in background tabs)
+- Preserves popup state when clicking links
 
 ## API Endpoints (Garmin Connect)
 
@@ -31,7 +58,7 @@ https://connect.garmin.com
 ```
 
 ### Authentication
-Uses Bearer token from user's session:
+Uses Bearer token from user's session (user-provided):
 ```javascript
 Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIs...
 ```
@@ -49,13 +76,14 @@ Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIs...
 ```
 
 ### Endpoints
-1. **Golf Clubs**: `GET /gcs-golfcommunity/api/v2/club/player?per-page=1000&include-stats=true&maxClubTypeId=42`
-2. **Scorecards**: `GET /gcs-golfcommunity/api/v2/scorecard/summary?user-locale=en&per-page=10000`
-3. **Shot Details**: `GET /gcs-golfcommunity/api/v2/shot/scorecard/{scorecardId}/hole?image-size=IMG_730X730`
+1. **Club Types**: `GET /gcs-golfcommunity/api/v2/club/types?maxClubTypeId=42`
+2. **Golf Clubs**: `GET /gcs-golfcommunity/api/v2/club/player?per-page=1000&include-stats=true&maxClubTypeId=42`
+3. **Scorecards**: `GET /gcs-golfcommunity/api/v2/scorecard/summary?user-locale=en&per-page=10000`
+4. **Shot Details**: `GET /gcs-golfcommunity/api/v2/shot/scorecard/{scorecardId}/hole?image-size=IMG_730X730`
 
 ## Shot Analysis Logic
 
-### Club Distance Limits (meters)
+### Default Club Distance Limits (meters)
 ```javascript
 const SHOT_LIMITS_BY_ID = {
   1: { max: 350 },   // Driver
@@ -64,63 +92,107 @@ const SHOT_LIMITS_BY_ID = {
   20: { max: 140 },  // AW (Approach Wedge)
   21: { max: 130 },  // SW (Sand Wedge)
   22: { max: 120 },  // LW (Lob Wedge)
-  23: { max: 20 },   // Putter ⚠️ Most important for detection
+  23: { max: 20 },   // Putter
   // ... full mapping in content.js
 }
 ```
 
+### Custom Range Override
+- Users can fetch their clubs and set personal maximum distances
+- Custom ranges are stored in Chrome local storage
+- Detection logic prioritizes custom ranges over defaults
+- Allows for personalized detection based on individual ability
+
 ### Detection Rules
-- **Putter**: Any shot > 20m is suspicious
+- **Putter**: Any shot > 20m (or custom) is suspicious
 - **Wedges**: Shots significantly over typical max distances
 - **Irons/Woods**: Unrealistic distances for club type
+- **Custom clubs**: Uses user-defined thresholds
 
 ## File Structure
 ```
 garmin-club-fix/
 ├── manifest.json          # Extension manifest (v3)
-├── background.js          # Service worker
-├── content.js            # Main logic, API calls
-├── popup.html            # Extension popup UI
-├── popup.js              # Popup interaction logic
-├── style.css             # Popup styling
-└── CLAUDE.md            # This documentation
+├── background.js          # Service worker, scan state management
+├── content.js             # Main logic, API calls, shot analysis
+├── popup.html             # Extension popup UI
+├── popup.js               # Popup interaction logic
+├── style.css              # Popup styling
+├── README.md              # User documentation
+├── structure.md           # Technical documentation
+└── CLAUDE.md              # This development documentation
 ```
 
-## Development Notes
+## State Management
 
-### Current Token
-```javascript
-// Hard-coded in content.js getBearerToken() function
-Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIs...
-```
+### Scan State Persistence
+- Scans continue even if popup is closed
+- Reopening popup shows current progress
+- Unique scan IDs prevent conflicts
+- Automatic cancellation when starting new scan
 
-### Next Steps
-1. **Debug scorecard data structure** - Investigate what fields are actually returned
-2. **Fix scorecard ID extraction** - Ensure proper field mapping
-3. **Test shot analysis** - Verify detection logic works with real data
-4. **Error handling** - Improve user feedback for API failures
+### Data Storage (Chrome Local Storage)
+- `bearerToken`: User's authentication token
+- `userId`: User's Garmin user ID for shot links
+- `customClubRanges`: User's custom distance settings per club
+- `scanInProgress`: Current scan state
+- `lastScanResults`: Most recent scan results
 
-### Installation
-1. Load extension in Chrome Developer Mode
-2. Navigate to `connect.garmin.com`
-3. Click extension icon to trigger scan
-4. View results in popup showing suspicious shots by scorecard
+## User Interface
 
-## Testing
-- **Test clubs API**: ✅ Working - returns club data with proper mapping
-- **Test scorecards API**: ❌ Need to fix scorecard ID field extraction  
-- **Test shot analysis**: ⏳ Pending scorecard fix
-- **Test UI**: ✅ Working - displays results grouped by scorecard/course
+### Main Controls
+- **Bearer Token**: Textarea for authentication token
+- **User ID**: Input field for user identification
+- **Save Settings**: Stores token and user ID
+- **Fetch My Clubs**: Retrieves user's clubs for customization
+- **Scan for Bad Shots**: Starts analysis process
 
-## Known Issues
-1. **Scorecard IDs missing** - API response structure different than expected
-2. **Rate limiting** - May need delays between API calls for large datasets
-3. **Token expiration** - Currently hard-coded, may need refresh logic
+### Club Customization
+- Displays all user clubs with current statistics
+- Shows average distance and lifetime max for each club
+- Allows adjustment of maximum distance thresholds
+- Saves custom ranges for future scans
 
-## Usage Instructions
-1. Open Garmin Connect in Chrome
-2. Go to any page (extension works site-wide on connect.garmin.com)
-3. Click the extension icon 
-4. Click "Scan Again" to analyze golf shots
-5. View suspicious shots grouped by course and date
-6. Look for obvious errors like "Putter - 60m" indicating GPS/tracking issues
+### Results Display
+- Groups by scorecard (course/date)
+- Lists suspicious shots with hole, club, distance
+- Provides direct links to Garmin Connect for editing
+- Links open in background tabs to preserve popup
+
+## Development Status
+
+### ✅ Completed Features
+- Full API integration with all required endpoints
+- User authentication and configuration
+- Complete shot analysis with custom ranges
+- State management and persistence
+- Comprehensive UI with club customization
+- Error handling and token management
+- Background scanning capabilities
+- Results display with navigation
+
+### 🚀 Ready for Production
+- All core functionality implemented and tested
+- Clean, production-ready code
+- Comprehensive documentation
+- User-friendly interface
+- Robust error handling
+
+## Common Issues & Solutions
+
+### Token Expiration
+- Tokens typically expire after 24-48 hours
+- Extension auto-detects 401/403 errors and clears token
+- User needs to get fresh token from dev tools
+
+### No Suspicious Shots
+- May indicate good GPS tracking or conservative distance ranges  
+- Users can adjust custom club ranges to be more sensitive
+- Some golfers may genuinely have few tracking errors
+
+### API Rate Limiting
+- Built-in delays prevent most rate limit issues
+- Large scan datasets (100+ rounds) may take several minutes
+- Background processing allows continued browsing
+
+This extension is now feature-complete and production-ready for helping golfers identify and fix GPS tracking errors in their Garmin Connect data.
